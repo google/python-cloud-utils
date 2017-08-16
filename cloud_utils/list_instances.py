@@ -50,6 +50,7 @@ DEFAULT_SHOWN_FIELDS = ['project', 'name', 'zone', 'id', 'state', 'ip_address', 
 GCP_INSTANCE_TYPE_DICT = {'standard': 'std', 'highmem': 'mem', 'n1-': '', 'highcpu': 'cpu', 'custom': 'ctm'}
 ALIGN_OPTIONS = ['l', 'c', 'r']
 Instance = namedtuple('Instance', INSTANCE_FILEDS)
+SUPPORTED_CLOUDS = ('gcp', 'aws')
 
 
 def pretify_field(field):
@@ -105,9 +106,10 @@ def gcp_filter_projects_instances(projects, filters, raw=True, credentials=None)
   except google.auth.exceptions.DefaultCredentialsError:
     return None
 
-  resourcemanager = discovery.build('cloudresourcemanager', 'v1', credentials=credentials)
-  projects = projects if projects is not None else [project['projectId']
-                                                    for project in resourcemanager.projects().list().execute().get('projects', [])]
+  if projects is None:
+    resourcemanager = discovery.build('cloudresourcemanager', 'v1', credentials=credentials)
+    projects = [project['projectId']
+                for project in resourcemanager.projects().list().execute().get('projects', [])]
 
   compute = discovery.build('compute', 'v1', credentials=credentials)
   batch = compute.new_batch_http_request()
@@ -220,10 +222,13 @@ def aws_get_instances_by_id(region, instance_id, raw=True):
   return matching_instances
 
 
-def get_instances_by_id(instance_id, regions=None, projects=None, raw=True, sort_by_order=('cloud', 'name')):  # pylint: disable=unused-argument
+def get_instances_by_id(instance_id, regions=None, projects=None, raw=True, sort_by_order=('cloud', 'name'), clouds=SUPPORTED_CLOUDS):  # pylint: disable=unused-argument
   with ThreadPoolExecutor(max_workers=len(AWS_REGION_LIST)) as executor:
-    results = executor.map(partial(aws_get_instances_by_id, instance_id=instance_id),
-                           AWS_REGION_LIST)
+    if 'aws' in clouds:
+      results = executor.map(partial(aws_get_instances_by_id, instance_id=instance_id),
+                             AWS_REGION_LIST)
+    else:
+      results = []
   matching_instances = []
   for result in results:
     matching_instances.extend(result)
@@ -232,29 +237,34 @@ def get_instances_by_id(instance_id, regions=None, projects=None, raw=True, sort
   return matching_instances
 
 
-def all_clouds_get_instances_by_name(name, projects, raw, credentials):
+def all_clouds_get_instances_by_name(name, projects, raw, credentials, clouds=SUPPORTED_CLOUDS):
   with ThreadPoolExecutor(max_workers=2 * len(AWS_REGION_LIST) + 1) as executor:
-    aws_name_results = executor.map(partial(aws_get_instances_by_name, name=name, raw=raw),
-                                    AWS_REGION_LIST)
-    aws_autoscaling_results = executor.map(partial(aws_get_instances_by_autoscaling_group_in_region, name=name, raw=raw),
-                                           AWS_REGION_LIST)
-    gcp_job = executor.submit(gcp_filter_projects_instances,
-                              projects=projects,
-                              filters=['labels.name eq {name}'.format(name=name.replace('*', '.*')),
-                                       'name eq {name}'.format(name=name.replace('*', '.*'))],
-                              raw=raw,
-                              credentials=credentials)
+    if 'aws' in clouds:
+      aws_name_results = executor.map(partial(aws_get_instances_by_name, name=name, raw=raw),
+                                      AWS_REGION_LIST)
+      aws_autoscaling_results = executor.map(partial(aws_get_instances_by_autoscaling_group_in_region, name=name, raw=raw),
+                                             AWS_REGION_LIST)
+    if 'gcp' in clouds:
+      gcp_job = executor.submit(gcp_filter_projects_instances,
+                                projects=projects,
+                                filters=['labels.name eq {name}'.format(name=name.replace('*', '.*')),
+                                         'name eq {name}'.format(name=name.replace('*', '.*'))],
+                                raw=raw,
+                                credentials=credentials)
 
-  matching_instances = gcp_job.result()
-  for instances in [result for result in aws_name_results] + [result for result in aws_autoscaling_results]:
-    # for instances in results:
-    matching_instances.extend(instances)
+  matching_instances = []
+  if 'gcp' in clouds:
+    matching_instances = gcp_job.result()
+  if 'aws' in clouds:
+    for instances in [result for result in aws_name_results] + [result for result in aws_autoscaling_results]:
+      # for instances in results:
+      matching_instances.extend(instances)
   return matching_instances
 
 
-def get_instances_by_name(name, sort_by_order=('cloud', 'name'), projects=None, raw=True, regions=None, gcp_credentials=None):
+def get_instances_by_name(name, sort_by_order=('cloud', 'name'), projects=None, raw=True, regions=None, gcp_credentials=None, clouds=SUPPORTED_CLOUDS):
   """Get intsances from GCP and AWS by name."""
-  matching_instances = all_clouds_get_instances_by_name(name, projects, raw, credentials=gcp_credentials)
+  matching_instances = all_clouds_get_instances_by_name(name, projects, raw, credentials=gcp_credentials, clouds=clouds)
   matching_instances.sort(key=lambda instance: [getattr(instance, field) for field in sort_by_order])
   return matching_instances
 
@@ -380,9 +390,12 @@ def main():
   parser.add_argument('--strict', action='store_true', default=False, help='search without automatic prefix and suffix *')
   parser.add_argument('--active', action='store_true', default=False, help='Only list active instances')
   parser.add_argument('--gevent', action='store_true', default=False, help='Use gevent')
-
   parser.add_argument('-q', '--quiet', action='store_true', default=False, help='Quiet (no headlines)')
+  parser.add_argument('--clouds', nargs='*', default=SUPPORTED_CLOUDS, help='clouds to search default: {}'.format(SUPPORTED_CLOUDS))
+
   args = parser.parse_args()
+  args.clouds = [cloud.lower() for cloud in args.clouds]
+
   if args.gevent:
     import gevent.monkey
     gevent.monkey.patch_all()
@@ -397,7 +410,7 @@ def main():
   instances = []
   search_method = get_instances_by_id if args.by_id else get_instances_by_name
   for required_name in args.name:
-    instances.extend(search_method(required_name, projects=args.projects, raw=args.raw, regions=args.regions))
+    instances.extend(search_method(required_name, projects=args.projects, raw=args.raw, regions=args.regions, clouds=args.clouds))
   if args.active:
     instances = [instance for instance in instances if instance.state == 'running']
   if not instances:
