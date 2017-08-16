@@ -38,13 +38,6 @@ except ImportError:
   print "Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances."
 
 
-try:
-  from gevent.pool import Pool  # pylint: disable=g-import-not-at-top
-  import gevent.monkey  # pylint: disable=g-import-not-at-top
-  gevent.monkey.patch_all()
-except ImportError:
-  gevent = None
-
 AUTOSCALING_GROUP_TAG = u'aws:autoscaling:groupName'
 AWS_REGION_LIST = ['us-east-1', 'eu-west-1', 'us-west-2',
                    'sa-east-1', 'ap-southeast-1', 'eu-central-1']
@@ -106,44 +99,47 @@ def _aws_get_instance_by_tag(region, name, tag, raw):
   return instances
 
 
-COMPUTE = None
-
-
-def _get_compute_api(credentials):
+def gcp_filter_projects_instances(projects, filters, raw=True, credentials=None):
   try:
-    global COMPUTE
-    if not COMPUTE:
-      credentials = credentials or GoogleCredentials.get_application_default()
-      COMPUTE = discovery.build('compute', 'v1', credentials=credentials)
+    credentials = credentials or GoogleCredentials.get_application_default()
   except google.auth.exceptions.DefaultCredentialsError:
     return None
-  return COMPUTE
+
+  resourcemanager = discovery.build('cloudresourcemanager', 'v1', credentials=credentials)
+  projects = projects if projects is not None else [project['projectId']
+                                                    for project in resourcemanager.projects().list().execute().get('projects', [])]
+
+  compute = discovery.build('compute', 'v1', credentials=credentials)
+  batch = compute.new_batch_http_request()
+  results = []
+  for project in projects:
+    for filter_to_apply in filters:
+      batch.add(compute.instances().aggregatedList(project=project,
+                                                   filter=filter_to_apply),
+                callback=lambda request_id, result, exception: results.append(result))
+  batch.execute()
+
+  instances = []
+  [instances.extend(get_instace_object_from_gcp_list(result['id'].split('/', 2)[1],  # pylint: disable=expression-not-assigned
+                                                     raw,
+                                                     result.get('items', [])))
+   for result in results if result is not None]
+  return instances
 
 
 def gcp_get_instances_by_label(project, name, raw=True, credentials=None):
-  compute = _get_compute_api(credentials)
-  if not compute:
-    return []
-  region_to_instances = compute.instances().aggregatedList(project=project,
-                                                           filter='labels.name eq {name}'.format(
-                                                               name=name.replace('*', '.*'))).execute().get('items', [])
-  return get_instace_object_from_gcp_list(project, raw, region_to_instances)
+  return gcp_filter_projects_instances(projects=[project],
+                                       filters=['labels.name eq {name}'.format(name=name.replace('*', '.*'))],
+                                       raw=raw,
+                                       credentials=credentials)
 
 
 def gcp_get_instances_by_name(project, name, raw=True, credentials=None):
   """Get instances in a GCP region matching name (with * wildcards)."""
-  compute = _get_compute_api(credentials)
-  if not compute:
-    return []
-  try:
-    region_to_instances = COMPUTE.instances().aggregatedList(project=project,
-                                                             filter='name eq {name}'.format(
-                                                                 name=name.replace('*', '.*'))).execute().get('items', [])
-  except googleapiclient.errors.HttpError as exc:
-    if exc.resp['status'] in ['403', '404']:
-      return []
-    raise
-  return get_instace_object_from_gcp_list(project, raw, region_to_instances)
+  return gcp_filter_projects_instances(projects=[project],
+                                       filters=['name eq {name}'.format(name=name.replace('*', '.*'))],
+                                       raw=raw,
+                                       credentials=credentials)
 
 
 def get_instace_object_from_gcp_list(project, raw, region_to_instances):
@@ -236,64 +232,29 @@ def get_instances_by_id(instance_id, regions=None, projects=None, raw=True, sort
   return matching_instances
 
 
-def _get_instances_using_threads(name, projects, raw, credentials):
-  with ThreadPoolExecutor(max_workers=2 * len(AWS_REGION_LIST) + 2 * len(projects)) as executor:
+def all_clouds_get_instances_by_name(name, projects, raw, credentials):
+  with ThreadPoolExecutor(max_workers=2 * len(AWS_REGION_LIST) + 1) as executor:
     aws_name_results = executor.map(partial(aws_get_instances_by_name, name=name, raw=raw),
                                     AWS_REGION_LIST)
     aws_autoscaling_results = executor.map(partial(aws_get_instances_by_autoscaling_group_in_region, name=name, raw=raw),
                                            AWS_REGION_LIST)
-    if credentials:
-      gcp_name_results = executor.map(partial(gcp_get_instances_by_name, name=name, raw=raw, credentials=credentials),
-                                      projects)
-      gcp_label_results = executor.map(partial(gcp_get_instances_by_label, name=name, raw=raw, credentials=credentials),
-                                       projects)
-    else:
-      gcp_name_results = gcp_label_results = []
-  matching_instances = []
-  for instances in [result for result in aws_name_results] + [result for result in gcp_name_results] +\
-          [result for result in gcp_label_results] + [result for result in aws_autoscaling_results]:
+    gcp_job = executor.submit(gcp_filter_projects_instances,
+                              projects=projects,
+                              filters=['labels.name eq {name}'.format(name=name.replace('*', '.*')),
+                                       'name eq {name}'.format(name=name.replace('*', '.*'))],
+                              raw=raw,
+                              credentials=credentials)
+
+  matching_instances = gcp_job.result()
+  for instances in [result for result in aws_name_results] + [result for result in aws_autoscaling_results]:
     # for instances in results:
     matching_instances.extend(instances)
   return matching_instances
 
 
-def _get_instances_using_gevent(name, projects, raw, credentials):
-  pool = Pool(size=None)
-  matching_instances = []
-  aws_name_results = pool.map_async(partial(aws_get_instances_by_name, name=name, raw=raw), AWS_REGION_LIST,
-                                    callback=lambda results: [matching_instances.extend(instances) for instances in results])
-  aws_autoscaling_results = pool.map_async(partial(aws_get_instances_by_autoscaling_group_in_region, name=name, raw=raw), AWS_REGION_LIST,
-                                           callback=lambda results: [matching_instances.extend(instances) for instances in results])
-  gcp_name_results = pool.map_async(partial(gcp_get_instances_by_name, name=name, raw=raw, credentials=credentials),
-                                    projects,
-                                    callback=lambda results: [matching_instances.extend(instances) for instances in results])
-  gcp_label_results = pool.map_async(partial(gcp_get_instances_by_label, name=name, raw=raw, credentials=credentials),
-                                     projects,
-                                     callback=lambda results: [matching_instances.extend(instances) for instances in results])
-  aws_name_results.join()
-  aws_autoscaling_results.join()
-  gcp_name_results.join()
-  gcp_label_results.join()
-  return matching_instances
-
-
 def get_instances_by_name(name, sort_by_order=('cloud', 'name'), projects=None, raw=True, regions=None, gcp_credentials=None):
   """Get intsances from GCP and AWS by name."""
-  try:
-    credentials = gcp_credentials or GoogleCredentials.get_application_default()
-    resourcemanager = discovery.build('cloudresourcemanager', 'v1', credentials=credentials)
-    projects = projects if projects is not None else [project['projectId']
-                                                      for project in resourcemanager.projects().list().execute().get('projects', [])]
-  except google.auth.exceptions.DefaultCredentialsError:
-    print "Error getting google application credentials. Can't connect to google instances. Run 'gcloud auth application-default login'"
-    projects = []
-    credentials = None
-  if gevent:
-    matching_instances = _get_instances_using_gevent(name, projects, raw, credentials)
-  else:
-    matching_instances = _get_instances_using_threads(name, projects, raw, credentials)
-  if regions:
-    matching_instances = [instance for instance in matching_instances if instance.region in regions]
+  matching_instances = all_clouds_get_instances_by_name(name, projects, raw, credentials=gcp_credentials)
   matching_instances.sort(key=lambda instance: [getattr(instance, field) for field in sort_by_order])
   return matching_instances
 
@@ -418,8 +379,13 @@ def main():
   parser.add_argument('-r', '--regions', default=None, nargs='*', help='Regions to search in')
   parser.add_argument('--strict', action='store_true', default=False, help='search without automatic prefix and suffix *')
   parser.add_argument('--active', action='store_true', default=False, help='Only list active instances')
+  parser.add_argument('--gevent', action='store_true', default=False, help='Use gevent')
+
   parser.add_argument('-q', '--quiet', action='store_true', default=False, help='Quiet (no headlines)')
   args = parser.parse_args()
+  if args.gevent:
+    import gevent.monkey
+    gevent.monkey.patch_all()
   if not args.strict:
     args.name = ['*' + name + '*' for name in args.name]
   table = Texttable(args.width)
