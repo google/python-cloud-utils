@@ -240,6 +240,12 @@ def all_clouds_get_instances_by_name(name, projects, raw, credentials, clouds=SU
     for instances in [result for result in aws_name_results] + [result for result in aws_autoscaling_results]:
       # for instances in results:
       matching_instances.extend(instances)
+
+  # Filter instances seen more than once (matching both autoscaling group and name)
+  seen_instances = set()
+  matching_instances = [instance
+                        for instance in matching_instances if instance.id not in seen_instances and (
+                            seen_instances.add(instance.id) or True)]
   return matching_instances
 
 
