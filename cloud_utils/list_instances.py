@@ -79,15 +79,15 @@ def _aws_instance_from_dict(region, instance, raw):
                   type=instance['InstanceType'] if raw else instance['InstanceType'].replace('xlarge', 'xl'),
                   autoscaling_group=tags.get(AUTOSCALING_GROUP_TAG, None),
                   public_dns_name=instance['PublicDnsName'],
-                  ip_address=instance['PublicIpAddress'],
+                  ip_address=instance.get('PublicIpAddress'),
                   iam_or_service_account=instance['IamInstanceProfile'][
                       'Arn'].split('/')[1] if instance.get('IamInstanceProfile') else None,
-                  private_ip_address=instance['PrivateIpAddress'],
+                  private_ip_address=instance.get('PrivateIpAddress'),
                   project='aws',
                   security_groups=[group['GroupName'] for group in instance['SecurityGroups']],
                   tags=tags,
                   created=datetime_to_str(instance['LaunchTime']),
-                  vpc_id=instance['VpcId'])
+                  vpc_id=instance.get('VpcId'))
 
 
 def _aws_get_instance_by_tag(region, name, tag, raw):
@@ -161,7 +161,7 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
         iam_or_service_account = ','.join([account['email'] for account in matching_instance['serviceAccounts']])
         instance_type = matching_instance['machineType'].split('/')[-1]
       else:
-        iam_or_service_account = ','.join([account['email'].split('@')[0] for account in matching_instance['serviceAccounts']])
+        iam_or_service_account = ','.join([account['email'].split('@')[0] for account in matching_instance.get('serviceAccounts', [])])
         instance_type = matching_instance['machineType'].split('/')[-1]
         for raw_type, pretty_type in GCP_INSTANCE_TYPE_DICT.iteritems():
           instance_type = instance_type.replace(raw_type, pretty_type)
