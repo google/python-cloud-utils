@@ -361,7 +361,7 @@ def get_cloud_from_zone(zone):
 
 def main():
   parser = ArgumentParser()
-  parser.add_argument('name', nargs='+', help='name to search')
+  parser.add_argument('name', nargs='*', help='name to search')
   parser.add_argument('--by-id', action='store_true', default=False, help='Search instance by id')
   parser.add_argument('-w', '--width', required=False, type=int, default=0, help='printed table width')
   parser.add_argument('-l', '--align', required=False, type=str, default='c', choices=ALIGN_OPTIONS,
@@ -381,6 +381,10 @@ def main():
   parser.add_argument('--clouds', nargs='*', default=SUPPORTED_CLOUDS, help='clouds to search default: {}'.format(SUPPORTED_CLOUDS))
 
   args = parser.parse_args()
+  if not args.name:
+    name = sys.argv.pop(-1)
+    args = parser.parse_args()
+    args.name = [name]
   args.clouds = [cloud.lower() for cloud in args.clouds]
 
   if args.gevent:
