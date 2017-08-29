@@ -16,7 +16,6 @@
 import sys
 
 from argparse import ArgumentParser
-import boto.ec2
 import boto3
 import botocore
 from collections import namedtuple
@@ -33,7 +32,6 @@ try:
   import google.auth.exceptions  # pylint: disable=g-import-not-at-top
   from googleapiclient import discovery  # pylint: disable=g-import-not-at-top
   from googleapiclient import errors  # pylint: disable=g-import-not-at-top
-  import googleapiclient.errors  # pylint: disable=g-import-not-at-top
 except ImportError:
   print "Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances."
 
@@ -70,33 +68,35 @@ def datetime_to_str(date):
   return date.astimezone(UTC).isoformat().split('+')[0].split('.')[0].replace('T', ' ')
 
 
+def _aws_instance_from_dict(region, instance, raw):
+  tags = {tag['Key']: tag['Value'] for tag in instance.get('Tags', [])}
+  return Instance(cloud='aws',  # pylint: disable=expression-not-assigned
+                  zone=instance['Placement']['AvailabilityZone'],
+                  region=region,
+                  id=instance['InstanceId'],
+                  name=tags.get('Name', 'Empty'),
+                  state=instance['State']['Name'],
+                  type=instance['InstanceType'] if raw else instance['InstanceType'].replace('xlarge', 'xl'),
+                  autoscaling_group=tags.get(AUTOSCALING_GROUP_TAG, None),
+                  public_dns_name=instance['PublicDnsName'],
+                  ip_address=instance['PublicIpAddress'],
+                  iam_or_service_account=instance['IamInstanceProfile'][
+                      'Arn'].split('/')[1] if instance.get('IamInstanceProfile') else None,
+                  private_ip_address=instance['PrivateIpAddress'],
+                  project='aws',
+                  security_groups=[group['GroupName'] for group in instance['SecurityGroups']],
+                  tags=tags,
+                  created=datetime_to_str(instance['LaunchTime']),
+                  vpc_id=instance['VpcId'])
+
+
 def _aws_get_instance_by_tag(region, name, tag, raw):
   """Get all instances matching a tag."""
-  con = boto.ec2.connect_to_region(region)
-  if not con:
-    return []
-  matching_reservations = con.get_all_instances(filters={tag: '{}'.format(name)})
-  if not matching_reservations:
-    return []
+  client = boto3.session.Session().client('ec2', region)
+  matching_reservations = client.describe_instances(Filters=[{'Name': tag, 'Values': [name]}]).get('Reservations', [])
   instances = []
-  [[instances.append(Instance(cloud='aws',  # pylint: disable=expression-not-assigned
-                              zone=instance.placement,
-                              region=region,
-                              id=instance.id,
-                              name=instance.tags.get('Name', 'Empty'),
-                              state=instance.state,
-                              type=instance.instance_type if raw else instance.instance_type.replace('xlarge', 'xl'),
-                              autoscaling_group=instance.tags.get(AUTOSCALING_GROUP_TAG, None),
-                              public_dns_name=instance.public_dns_name,
-                              ip_address=instance.ip_address,
-                              iam_or_service_account=instance.instance_profile['arn'].split('/')[1] if instance.instance_profile else None,
-                              private_ip_address=instance.private_ip_address,
-                              project='aws',
-                              security_groups=[group.name for group in instance.groups],
-                              tags=instance.tags,
-                              vpc_id=instance.vpc_id,
-                              created=datetime_to_str(parse_date(instance.launch_time))))
-    for instance in reservation.instances] for reservation in matching_reservations if reservation]
+  [[instances.append(_aws_instance_from_dict(region, instance, raw))  # pylint: disable=expression-not-assigned
+    for instance in reservation.get('Instances')] for reservation in matching_reservations if reservation]
   return instances
 
 
@@ -195,31 +195,12 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
 
 def aws_get_instances_by_id(region, instance_id, raw=True):
   """Returns instances mathing an id."""
-  con = boto.ec2.connect_to_region(region)
-  if not con:
-    return []
-  matching_reservations = con.get_all_instances(filters={'instance-id': instance_id})
-  matching_instances = []
-  [[matching_instances.append(Instance(cloud='aws',  # pylint: disable=expression-not-assigned
-                                       zone=instance.placement,
-                                       region=region,
-                                       id=instance.id,
-                                       name=instance.tags.get('Name', 'Empty'),
-                                       state=instance.state,
-                                       type=instance.instance_type,
-                                       autoscaling_group=instance.tags.get(AUTOSCALING_GROUP_TAG, None),
-                                       public_dns_name=instance.public_dns_name,
-                                       ip_address=instance.ip_address,
-                                       iam_or_service_account=instance.instance_profile[
-                                           'arn'].split('/')[1] if instance.instance_profile else None,
-                                       private_ip_address=instance.private_ip_address,
-                                       project='aws',
-                                       security_groups=[group.name for group in instance.groups],
-                                       tags=instance.tags,
-                                       created=datetime_to_str(parse_date(instance.launch_time)),
-                                       vpc_id=instance.vpc_id))
-    for instance in reservation.instances] for reservation in matching_reservations if reservation]
-  return matching_instances
+  client = boto3.session.Session().client('ec2', region)
+  matching_reservations = client.describe_instances(InstanceIds=[instance_id]).get('Reservations', [])
+  instances = []
+  [[instances.append(_aws_instance_from_dict(region, instance, raw))  # pylint: disable=expression-not-assigned
+    for instance in reservation.get('Instances')] for reservation in matching_reservations if reservation]
+  return instances
 
 
 def get_instances_by_id(instance_id, regions=None, projects=None, raw=True, sort_by_order=('cloud', 'name'), clouds=SUPPORTED_CLOUDS):  # pylint: disable=unused-argument
