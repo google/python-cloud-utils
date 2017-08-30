@@ -13,9 +13,12 @@
 # limitations under the License.
 
 from setuptools import setup
+import subprocess
 
+COMMIT_COUNT = subprocess.check_output("git rev-list HEAD --count", shell=True)
+VERSION = '1.0.{}'.format(COMMIT_COUNT)
 setup(name='cloud-utils',
-      version='1.0',
+      version=VERSION,
       description='Python Cloud Utilities',
       author='Arie Abramovici',
       author_email='beast@google.com',
