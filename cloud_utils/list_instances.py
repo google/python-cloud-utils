@@ -18,6 +18,7 @@ import sys
 from argparse import ArgumentParser
 import boto3
 import botocore
+from botocore.exceptions import ClientError
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from dateutil.parser import parse as parse_date
@@ -196,7 +197,12 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
 def aws_get_instances_by_id(region, instance_id, raw=True):
   """Returns instances mathing an id."""
   client = boto3.session.Session().client('ec2', region)
-  matching_reservations = client.describe_instances(InstanceIds=[instance_id]).get('Reservations', [])
+  try:
+    matching_reservations = client.describe_instances(InstanceIds=[instance_id]).get('Reservations', [])
+  except ClientError as exc:
+    if exc.response.get('Error', {}).get('Code') != 'InvalidInstanceID.NotFound':
+      raise
+    return []
   instances = []
   [[instances.append(_aws_instance_from_dict(region, instance, raw))  # pylint: disable=expression-not-assigned
     for instance in reservation.get('Instances')] for reservation in matching_reservations if reservation]
