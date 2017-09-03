@@ -14,7 +14,7 @@
 
 from setuptools import setup
 
-VERSION = '1.0.13'
+VERSION = '1.0.14'
 setup(name='cloud-utils',
       version=VERSION,
       description='Python Cloud Utilities',
