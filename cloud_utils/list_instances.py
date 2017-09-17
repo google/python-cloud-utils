@@ -177,7 +177,7 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
       matching_intsances.append(Instance(cloud='gcp',
                                          zone=region.replace('zones/', ''),
                                          region=region.replace('zones/', '')[:-2],
-                                         id=str(matching_instance['id']),
+                                         id=matching_instance['name'],
                                          name=matching_instance['name'] if 'name' not in tags else tags['name'],
                                          state=matching_instance['status'].lower(),
                                          type=instance_type,
