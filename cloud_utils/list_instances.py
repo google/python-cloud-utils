@@ -115,12 +115,31 @@ def gcp_filter_projects_instances(projects, filters, raw=True, credentials=None)
   compute = discovery.build('compute', 'v1', credentials=credentials)
   batch = compute.new_batch_http_request()
   results = []
+  replies = []
   for project in projects:
     for filter_to_apply in filters:
       batch.add(compute.instances().aggregatedList(project=project,
                                                    filter=filter_to_apply),
-                callback=lambda request_id, result, exception: results.append(result))
+                callback=partial(lambda request_id, result, exception, inside_filter, inside_project: replies.append((inside_project, inside_filter, result)),
+                                 inside_filter=filter_to_apply, inside_project=project))
   batch.execute()
+
+  results.extend([result for project, filter, result in replies])
+  batch = compute.new_batch_http_request()
+  next_batch_requests = [(project, filter, result) for project, filter, result in replies if result and result.get('nextPageToken')]
+  replies = []
+  while next_batch_requests:
+    [batch.add(compute.instances().aggregatedList(project=project,
+                                                  filter=filter,
+                                                  pageToken=result['nextPageToken']),
+               callback=partial(lambda request_id, result, exception, inside_filter, inside_project: replies.append((inside_project, inside_filter, result)),
+                                inside_filter=filter, inside_project=project))
+     for project, filter, result in next_batch_requests]
+    batch.execute()
+    results.extend([result for project, filter, result in replies])
+    batch = compute.new_batch_http_request()
+    next_batch_requests = [(project, filter, result) for project, filter, result in replies if result and result.get('nextPageToken')]
+    replies = []
 
   instances = []
   [instances.extend(get_instace_object_from_gcp_list(result['id'].split('/', 2)[1],  # pylint: disable=expression-not-assigned
