@@ -277,6 +277,8 @@ def all_clouds_get_instances_by_name(name, projects, raw, credentials, clouds=SU
 def get_instances_by_name(name, sort_by_order=('cloud', 'name'), projects=None, raw=True, regions=None, gcp_credentials=None, clouds=SUPPORTED_CLOUDS):
   """Get intsances from GCP and AWS by name."""
   matching_instances = all_clouds_get_instances_by_name(name, projects, raw, credentials=gcp_credentials, clouds=clouds)
+  if regions:
+    matching_instances = [instance for instance in matching_instance if instance.region in regions]
   matching_instances.sort(key=lambda instance: [getattr(instance, field) for field in sort_by_order])
   return matching_instances
 
