@@ -22,6 +22,6 @@ setup(name='cloud-utils',
       author_email='beast@google.com',
       packages=['cloud_utils'],
       entry_points={'console_scripts': ['list_instances = cloud_utils.list_instances:main']},
-      install_requires=['boto3', 'botocore', 'google-api-python-client==1.6.2',
-                        'google-auth', 'texttable', 'futures', 'python-dateutil', 'pytz'],
+      install_requires=['boto', 'boto3', 'botocore', 'google-api-python-client==1.6.2',
+                        'google.auth', 'texttable', 'futures', 'python-dateutil', 'pytz'],
       zip_safe=False)
