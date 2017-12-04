@@ -386,7 +386,7 @@ def get_cloud_from_zone(zone):
   raise ValueError('Unknown zone %s' % zone)
 
 
-def main():
+def parse_args():
   parser = ArgumentParser()
   parser.add_argument('name', nargs='*', help='name to search')
   parser.add_argument('--by-id', action='store_true', default=False, help='Search instance by id')
@@ -414,6 +414,10 @@ def main():
     args.name = [name]
   args.clouds = [cloud.lower() for cloud in args.clouds]
 
+  return args
+
+
+def main(args):
   if args.gevent:
     import gevent.monkey
     gevent.monkey.patch_all()
@@ -440,4 +444,4 @@ def main():
 
 
 if __name__ == '__main__':
-  main()
+  main(parse_args())
