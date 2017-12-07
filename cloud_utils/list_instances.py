@@ -26,6 +26,7 @@ from functools import partial
 from pytz import UTC
 import re
 from texttable import Texttable
+import kubernetes.client.rest
 
 
 try:
@@ -36,6 +37,10 @@ try:
 except ImportError:
   print "Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances."
 
+try:
+  from kubernetes import client, config  # pylint: disable=g-import-not-at-top,g-multiple-import
+except ImportError:
+  print "Warning, kubernetes not installed, not getting pods"
 
 AUTOSCALING_GROUP_TAG = u'aws:autoscaling:groupName'
 AWS_REGION_LIST = ['us-east-1', 'eu-west-1', 'us-west-2',
@@ -49,7 +54,7 @@ DEFAULT_SHOWN_FIELDS = ['project', 'name', 'zone', 'id', 'state', 'ip_address', 
 GCP_INSTANCE_TYPE_DICT = {'standard': 'std', 'highmem': 'mem', 'n1-': '', 'highcpu': 'cpu', 'custom': 'ctm'}
 ALIGN_OPTIONS = ['l', 'c', 'r']
 Instance = namedtuple('Instance', INSTANCE_FILEDS)
-SUPPORTED_CLOUDS = ('gcp', 'aws')
+SUPPORTED_CLOUDS = ('gcp', 'aws', 'k8s')
 
 
 def pretify_field(field):
@@ -244,7 +249,7 @@ def get_instances_by_id(instance_id, regions=None, projects=None, raw=True, sort
 
 
 def all_clouds_get_instances_by_name(name, projects, raw, credentials, clouds=SUPPORTED_CLOUDS):
-  with ThreadPoolExecutor(max_workers=2 * len(AWS_REGION_LIST) + 1) as executor:
+  with ThreadPoolExecutor(max_workers=2 * len(AWS_REGION_LIST) + 2) as executor:
     if 'aws' in clouds:
       aws_name_results = executor.map(partial(aws_get_instances_by_name, name=name, raw=raw),
                                       AWS_REGION_LIST)
@@ -257,6 +262,8 @@ def all_clouds_get_instances_by_name(name, projects, raw, credentials, clouds=SU
                                          'name eq {name}'.format(name=name.replace('*', '.*'))],
                                 raw=raw,
                                 credentials=credentials)
+    if 'k8s' in clouds:
+      kube_job = executor.submit(get_all_pods, name)
 
   matching_instances = []
   if 'gcp' in clouds:
@@ -265,6 +272,8 @@ def all_clouds_get_instances_by_name(name, projects, raw, credentials, clouds=SU
     for instances in [result for result in aws_name_results] + [result for result in aws_autoscaling_results]:
       # for instances in results:
       matching_instances.extend(instances)
+  if 'k8s' in clouds:
+    matching_instances.extend(kube_job.result())
 
   # Filter instances seen more than once (matching both autoscaling group and name)
   seen_instances = set()
@@ -290,6 +299,55 @@ def get_instances_by_id_or_name(identifier):
     if matching_instances:
       return matching_instances[0]
   return get_instances_by_name(identifier)
+
+
+def run_map(func, args, max_workers=None):
+  def wrapper(arg):
+    result = func(arg)
+    return arg, result
+
+  with ThreadPoolExecutor(max_workers or len(args)) as executor:
+    results = executor.map(wrapper, args)
+
+  return {result[0]: result[1] for result in results}
+
+
+def get_pods_for_context(context, name):
+  try:
+    kube = client.CoreV1Api(config.new_client_from_config(context=context))
+    pod_dicts = [pod.to_dict()
+                 for pod in kube.list_pod_for_all_namespaces(watch=False,
+                                                             field_selector='metadata.namespace!=kube-system').items]
+  except kubernetes.client.rest.ApiException:
+    return []
+  return [pod for pod in pod_dicts if re.match(name, pod['metadata']['name'])]
+
+
+def get_all_pods(name):
+  name = name.replace('*', '.*')
+  all_contexts = [context['name'] for context in config.list_kube_config_contexts()[0]]
+  results = run_map(partial(get_pods_for_context, name=name), all_contexts)
+  instances = []
+  [[instances.append(Instance(cloud='k8s',  # pylint: disable=expression-not-assigned
+                              zone=context,
+                              region=context,
+                              id=pod['metadata']['name'],
+                              name=pod['metadata']['name'],
+                              state=pod['status']['phase'].lower(),
+                              type='pod',
+                              autoscaling_group=None,
+                              public_dns_name=None,
+                              ip_address=None,
+                              iam_or_service_account=None,
+                              private_ip_address=None,
+                              project='k8s',
+                              security_groups=None,
+                              tags=None,
+                              created=None,
+                              vpc_id=None))
+    for pod in pods]
+   for context, pods in results.iteritems()]
+  return instances
 
 
 def get_os_version(instance):
