@@ -23,11 +23,11 @@ from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from dateutil.parser import parse as parse_date
 from functools import partial
+import kubernetes.client.rest
+import kubernetes.config.config_exception
 from pytz import UTC
 import re
 from texttable import Texttable
-import kubernetes.client.rest
-
 
 try:
   from oauth2client.client import GoogleCredentials  # pylint: disable=g-import-not-at-top
@@ -318,7 +318,7 @@ def get_pods_for_context(context, name):
     pod_dicts = [pod.to_dict()
                  for pod in kube.list_pod_for_all_namespaces(watch=False,
                                                              field_selector='metadata.namespace!=kube-system').items]
-  except kubernetes.client.rest.ApiException:
+  except (kubernetes.client.rest.ApiException, kubernetes.config.config_exception.ConfigException):
     return []
   return [pod for pod in pod_dicts if re.match(name, pod['metadata']['name'])]
 
