@@ -445,6 +445,21 @@ def get_persistent_address(instance):
     raise ValueError('Unknown cloud %s' % instance.cloud)
 
 
+def get_image(instance):
+    if instance.cloud == 'gcp':
+        if instance.autoscaling_group is None:
+            return None
+        compute = discovery.build('compute', 'v1')
+        return compute.instanceTemplates().get(project=instance.project,
+                                               instanceTemplate=instance.tags['instance-template'].rsplit('/', 1)[1]).execute().get('name', None)
+    elif instance.cloud == 'aws':
+        ec2 = boto3.client('ec2', instance.region)
+        return ec2.describe_instances(InstanceIds=[instance.id]).get(u'Reservations', [])[0]['Instances'][0].get('ImageId', None)
+    else:
+        raise NotImplementedError('Unsupported cloud {}'.format(instance.cloud))
+    return None
+
+
 def get_cloud_from_zone(zone):
     for region in AWS_REGION_LIST:
         if region in zone:
