@@ -301,13 +301,11 @@ def get_instances_by_name(name, sort_by_order=('cloud', 'name'), projects=None, 
     return matching_instances
 
 
-def get_instances_by_id_or_name(identifier):
-    id_regex = re.compile('^i?-?(?P<id>[0-9a-f]{17}|[0-9a-f]{8})$')
+def get_instances_by_id_or_name(identifier, *args, **kwargs):
+    id_regex = re.compile(r'^\*?i?-?(?P<id>[0-9a-f]{17}|[0-9a-f]{8})\*?$')
     if id_regex.match(identifier):
-        matching_instances = get_instances_by_id(identifier)
-        if matching_instances:
-            return matching_instances[0]
-    return get_instances_by_name(identifier)
+        return get_instances_by_id(identifier, *args, **kwargs)
+    return get_instances_by_name(identifier, *args, **kwargs)
 
 
 def run_map(func, args, max_workers=None):
@@ -460,7 +458,8 @@ def get_cloud_from_zone(zone):
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument('name', nargs='*', help='name to search')
-    parser.add_argument('--by-id', action='store_true', default=False, help='Search instance by id')
+    parser.add_argument('--by-id', action='store_true', default=False,
+                        help='Deprecated- All searches are by id or name')
     parser.add_argument('-w', '--width', required=False, type=int, default=0, help='printed table width')
     parser.add_argument('-l', '--align', required=False, type=str, default='c', choices=ALIGN_OPTIONS,
                         help='align output {0}'.format(ALIGN_OPTIONS))
@@ -503,10 +502,9 @@ def main(args):
         table.add_row([pretify_field(field) for field in args.fields])
     table.set_deco(0)
     instances = []
-    search_method = get_instances_by_id if args.by_id else get_instances_by_name
     for required_name in args.name:
-        instances.extend(search_method(required_name, projects=args.projects,
-                                       raw=args.raw, regions=args.regions, clouds=args.clouds))
+        instances.extend(get_instances_by_id_or_name(required_name, projects=args.projects,
+                                                     raw=args.raw, regions=args.regions, clouds=args.clouds))
     if args.active:
         instances = [instance for instance in instances if instance.state == 'running']
     if not instances:
