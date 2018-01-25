@@ -396,11 +396,11 @@ def get_volumes(instance):
         credentials = GoogleCredentials.get_application_default()
         compute = discovery.build('compute', 'v1', credentials=credentials)
         volumes = {}
-        for disk in compute.instances().get(instance=instance.name,
+        for disk in compute.instances().get(instance=instance.id,
                                             zone=instance.zone,
                                             project=instance.project).execute()['disks']:
             index = disk['index']
-            name = disk['deviceName'] if disk['deviceName'] != u'persistent-disk-0' else instance.name
+            name = disk['deviceName'] if disk['deviceName'] not in [u'persistent-disk-0', 'boot'] else instance.id
             if 'local-ssd' in disk['deviceName']:
                 size = 375.0
             if 'local-ssd' in disk['deviceName']:
