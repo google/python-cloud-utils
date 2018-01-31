@@ -450,8 +450,11 @@ def get_image(instance):
         if instance.autoscaling_group is None:
             return None
         compute = discovery.build('compute', 'v1')
-        return compute.instanceTemplates().get(project=instance.project,
-                                               instanceTemplate=instance.tags['instance-template'].rsplit('/', 1)[1]).execute().get('name', None)
+        instance_template = compute.instanceTemplates().get(project=instance.project,
+                                                            instanceTemplate=instance.tags['instance-template']
+                                                            .rsplit('/', 1)[1]).execute()
+
+        return instance_template['properties']['disks'][0]['initializeParams']['sourceImage'].split('/')[-1]
     elif instance.cloud == 'aws':
         ec2 = boto3.client('ec2', instance.region)
         return ec2.describe_instances(InstanceIds=[instance.id]).get(u'Reservations', [])[0]['Instances'][0].get('ImageId', None)
