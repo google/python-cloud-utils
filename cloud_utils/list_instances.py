@@ -49,7 +49,7 @@ GCP_REGION_LIST = ['us-east1', 'asia-east1', 'asia-northeast1',
                    'asia-southeast1', 'europe-west1', 'us-central1', 'us-west1']
 INSTANCE_FILEDS = ['cloud', 'created', 'name', 'region', 'id', 'state', 'ip_address', 'type', 'autoscaling_group',
                    'iam_or_service_account', 'public_dns_name', 'private_ip_address', 'project', 'zone', 'security_groups',
-                   'tags', 'vpc_id']
+                   'tags', 'vpc_id', 'reservation_type']
 DEFAULT_SHOWN_FIELDS = ['project', 'name', 'zone', 'id', 'state', 'ip_address', 'type', 'created',
                         'autoscaling_group', 'iam_or_service_account', 'private_ip_address']
 GCP_INSTANCE_TYPE_DICT = {'standard': 'std', 'highmem': 'mem', 'n1-': '', 'highcpu': 'cpu', 'custom': 'ctm'}
@@ -94,6 +94,7 @@ def _aws_instance_from_dict(region, instance, raw):
                     security_groups=[group['GroupName'] for group in instance['SecurityGroups']],
                     tags=tags,
                     created=datetime_to_str(instance['LaunchTime']),
+                    reservation_type=instance.get('InstanceLifecycle', 'on_demand'),
                     vpc_id=instance.get('VpcId'))
 
 
@@ -221,6 +222,8 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
                                                security_groups=[],
                                                tags=tags,
                                                created=creation_datetime,
+                                               reservation_type='preemptible' if matching_instance.get(
+                                                   'preemptible') else 'on-demand',
                                                vpc_id=None))
     return matching_intsances
 
@@ -354,6 +357,7 @@ def get_all_pods(name):
                                 security_groups=None,
                                 tags=None,
                                 created=None,
+                                reservation_type='container',
                                 vpc_id=None))
       for pod in pods]
      for context, pods in results.iteritems()]
