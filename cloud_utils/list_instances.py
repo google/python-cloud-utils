@@ -356,7 +356,7 @@ def get_all_pods(name):
                                 project='k8s',
                                 security_groups=None,
                                 tags=None,
-                                created=None,
+                                created=datetime_to_str(pod['status']['start_time']),
                                 reservation_type='container',
                                 vpc_id=None))
       for pod in pods]
