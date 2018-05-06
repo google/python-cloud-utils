@@ -189,7 +189,7 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
             public_ip = None
             if raw:
                 iam_or_service_account = ','.join([account['email']
-                                                   for account in matching_instance['serviceAccounts']])
+                                                   for account in matching_instance.get('serviceAccounts', [])])
                 instance_type = matching_instance['machineType'].split('/')[-1]
             else:
                 iam_or_service_account = ','.join([account['email'].split('@')[0]
