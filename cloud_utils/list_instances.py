@@ -13,6 +13,8 @@
 # limitations under the License.
 
 """list instances from AWS, and GCP."""
+from __future__ import print_function
+
 import sys
 
 from argparse import ArgumentParser
@@ -35,12 +37,12 @@ try:
     from googleapiclient import discovery  # pylint: disable=g-import-not-at-top
     from googleapiclient import errors  # pylint: disable=g-import-not-at-top
 except ImportError:
-    print "Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances."
+    print("Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances.")
 
 try:
     from kubernetes import client, config  # pylint: disable=g-import-not-at-top,g-multiple-import
 except ImportError:
-    print "Warning, kubernetes not installed, not getting pods"
+    print("Warning, kubernetes not installed, not getting pods")
 
 AUTOSCALING_GROUP_TAG = u'aws:autoscaling:groupName'
 AWS_REGION_LIST = ['us-east-1', 'eu-west-1', 'us-west-2',
@@ -534,7 +536,7 @@ def main(args):
     instances.sort(key=lambda instance: [getattr(instance, field) for field in args.sort_by])
     table.add_rows([[getattr(instance, field) for field in args.fields]
                     for instance in instances], header=False)
-    print table.draw()
+    print(table.draw())
 
 
 if __name__ == '__main__':
