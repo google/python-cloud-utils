@@ -339,7 +339,7 @@ def get_all_pods(name):
         all_contexts = [context['name'] for context in config.list_kube_config_contexts()[0]]
     except:  # pylint:disable=bare-except
         return []
-    results = run_map(partial(get_pods_for_context, name=name), all_contexts)
+    results = run_map(partial(get_pods_for_context, name=name), all_contexts, max_workers=2)
     instances = []
     [[instances.append(Instance(cloud='k8s',  # pylint: disable=expression-not-assigned
                                 zone=context,
