@@ -38,6 +38,6 @@ setup(name='cloud-utils',
       homepage='https://github.com/google/python-cloud-utils',
       packages=['cloud_utils'],
       entry_points={'console_scripts': ['list_instances = cloud_utils.list_instances:main']},
-      install_requires=['boto', 'boto3', 'botocore', 'google-api-python-client==1.6.2',
+      install_requires=['boto', 'boto3', 'botocore', 'google-api-python-client==1.6.2', 'urllib3==1.22',
                         'google-auth', 'texttable', 'futures', 'python-dateutil', 'pytz', 'kubernetes'],
       zip_safe=False)
