@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+
 """list instances from AWS, and GCP."""
 import sys
 
@@ -35,12 +37,12 @@ try:
     from googleapiclient import discovery  # pylint: disable=g-import-not-at-top
     from googleapiclient import errors  # pylint: disable=g-import-not-at-top
 except ImportError:
-    print "Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances."
+    print("Warning, google-api-python-client or google-auth not installed, can't connect to GCP instances.")
 
 try:
     from kubernetes import client, config  # pylint: disable=g-import-not-at-top,g-multiple-import
 except ImportError:
-    print "Warning, kubernetes not installed, not getting pods"
+    print("Warning, kubernetes not installed, not getting pods")
 
 AUTOSCALING_GROUP_TAG = u'aws:autoscaling:groupName'
 AWS_REGION_LIST = ['us-east-1', 'eu-west-1', 'us-west-2',
@@ -175,7 +177,7 @@ def gcp_get_instances_by_name(project, name, raw=True, credentials=None):
 
 def get_instace_object_from_gcp_list(project, raw, region_to_instances):
     matching_intsances = []
-    for region, region_instances in region_to_instances.iteritems():
+    for region, region_instances in region_to_instances.items():
         for matching_instance in region_instances.get('instances', []):
             created_by = [item['value'] for item in matching_instance.get(
                 'metadata', {}).get('items', []) if item['key'] == 'created-by']
@@ -195,7 +197,7 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
                 iam_or_service_account = ','.join([account['email'].split('@')[0]
                                                    for account in matching_instance.get('serviceAccounts', [])])
                 instance_type = matching_instance['machineType'].split('/')[-1]
-                for raw_type, pretty_type in GCP_INSTANCE_TYPE_DICT.iteritems():
+                for raw_type, pretty_type in GCP_INSTANCE_TYPE_DICT.items():
                     instance_type = instance_type.replace(raw_type, pretty_type)
             for interface in matching_instance['networkInterfaces']:
                 if 'accessConfigs' in interface and interface['accessConfigs'] and interface['accessConfigs'][0].get('natIP'):
@@ -360,7 +362,7 @@ def get_all_pods(name):
                                 reservation_type='container',
                                 vpc_id=None))
       for pod in pods]
-     for context, pods in results.iteritems()]
+     for context, pods in results.items()]
     return instances
 
 
@@ -534,7 +536,7 @@ def main(args):
     instances.sort(key=lambda instance: [getattr(instance, field) for field in args.sort_by])
     table.add_rows([[getattr(instance, field) for field in args.fields]
                     for instance in instances], header=False)
-    print table.draw()
+    print(table.draw())
 
 
 if __name__ == '__main__':
