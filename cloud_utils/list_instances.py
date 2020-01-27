@@ -409,14 +409,9 @@ def get_volumes(instance):
             name = disk['deviceName'] if disk['deviceName'] not in [u'persistent-disk-0', 'boot'] else instance.id
             if 'local-ssd' in disk['deviceName']:
                 size = 375.0
-            if 'local-ssd' in disk['deviceName']:
-                size = 375.0
                 disk_type = 'local-ssd'
             else:
-                disk_data = compute.disks().get(disk=name,
-                                                zone=instance.zone,
-                                                project=instance.project).execute()
-                size = float(disk_data['sizeGb'])
+                size = float(disk['diskSizeGb'])
                 disk_type = 'pd-ssd'
             volumes[index] = {'size': size,
                               'type': disk['type'],
