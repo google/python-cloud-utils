@@ -392,7 +392,7 @@ def get_os_version(instance):
 def get_volumes(instance):
     """Returns all the volumes of an instance."""
     if instance.cloud == 'aws':
-        client = boto3.client('ec2', instance.region)
+        client = boto3.session.Session().client('ec2', instance.region)
         devices = client.describe_instance_attribute(
             InstanceId=instance.id, Attribute='blockDeviceMapping').get('BlockDeviceMappings', [])
         volumes = client.describe_volumes(VolumeIds=[device['Ebs']['VolumeId']
@@ -411,7 +411,7 @@ def get_volumes(instance):
                 size = 375.0
                 disk_type = 'local-ssd'
             else:
-                size = float(disk['diskSizeGb'])
+                size = float(disk.get('diskSizeGb', 0.))
                 disk_type = 'pd-ssd'
             volumes[index] = {'size': size,
                               'type': disk['type'],
