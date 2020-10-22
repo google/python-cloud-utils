@@ -155,7 +155,7 @@ def gcp_filter_projects_instances(projects, filters, raw=True, credentials=None)
     instances = []
     [instances.extend(get_instace_object_from_gcp_list(result['id'].split('/', 2)[1],  # pylint: disable=expression-not-assigned
                                                        raw,
-                                                       result.get('items', [])))
+                                                       result.get('items', {})))
      for result in results if result is not None]
     return instances
 
