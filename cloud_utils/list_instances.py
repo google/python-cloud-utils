@@ -176,7 +176,7 @@ def gcp_get_instances_by_name(project, name, raw=True, credentials=None):
 
 
 def get_instace_object_from_gcp_list(project, raw, region_to_instances):
-    matching_intsances = []
+    matching_instances = []
     for region, region_instances in region_to_instances.items():
         for matching_instance in region_instances.get('instances', []):
             created_by = [item['value'] for item in matching_instance.get(
@@ -207,7 +207,7 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
             tags[None] = matching_instance['tags'].get('items', [])
 
             creation_datetime = datetime_to_str(parse_date(matching_instance['creationTimestamp']))
-            matching_intsances.append(Instance(cloud='gcp',
+            matching_instances.append(Instance(cloud='gcp',
                                                zone=region.replace('zones/', ''),
                                                region=region.replace('zones/', '')[:-2],
                                                id=matching_instance['name'],
@@ -227,7 +227,7 @@ def get_instace_object_from_gcp_list(project, raw, region_to_instances):
                                                reservation_type='preemptible' if matching_instance.get(
                                                    'preemptible') else 'on-demand',
                                                vpc_id=None))
-    return matching_intsances
+    return matching_instances
 
 
 def aws_get_instances_by_id(region, instance_id, raw=True):
